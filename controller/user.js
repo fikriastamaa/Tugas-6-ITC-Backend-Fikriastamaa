@@ -267,66 +267,94 @@ const getUserByToken = async(req,res,next)=>{
 }
 
 //edit user account (fullname, angkatan, nim, profilepicture/image)
-const editUserAccount = async(req,res,next)=>{
+const editUserAccount = async (req, res, next) => {
   try {
-    //ekstak tokennya
+    // Ekstrak token dari header
     const authorization = req.headers.authorization;
     let token;
-    if(authorization !== null && authorization.startsWith("Bearer ")){
+    if (authorization !== null && authorization.startsWith("Bearer ")) {
       token = authorization.substring(7);
-    }else{
+    } else {
       const error = new Error("You need to login");
       error.statusCode(403);
       throw error;
     }
     const decoded = jwt.verify(token, key);
 
-    //cari usernya
+    // Cari pengguna berdasarkan ID
     const currentUser = await User.findOne({
-      where:{
-        id: decoded.userId
-      }
-    })
-    if(!currentUser){
-      const error = new Error(`User with id ${id} not exist!`);
+      where: {
+        id: decoded.userId,
+      },
+    });
+
+    if (!currentUser) {
+      const error = new Error(`User with id ${decoded.userId} not exist!`);
       error.statusCode = 400;
       throw error;
     }
-    let imageUrl;
-    //proses datanya
-    if(req.file){
+
+    let imageUrl = currentUser.profilePicture;
+    // Proses data jika ada file gambar
+    if (req.file) {
       const file = req.file;
-      
+
       const uploadOption = {
         folder: 'Profile_Member/',
         public_id: `user_${currentUser.id}`,
-        overwrite: true
-      }
-      
-      const uploadFile = await cloudinary.uploader.upload
-      (file.path, uploadOption);
+        overwrite: true,
+      };
 
-      //didapat image URL
+      const uploadFile = await cloudinary.uploader.upload(file.path, uploadOption);
+
+      // Dapatkan URL gambar baru
       imageUrl = uploadFile.secure_url;
 
-      //image url bakal diupdate kedalam database user bersangkutan
-      
-
-      //ngehapus file yang diupload didalam dir lokal
+      // Hapus file yang diupload di direktori lokal
       fs.unlinkSync(file.path);
     }
 
+    // Update data pengguna
+    await User.update({
+        fullName: req.body.fullName || currentUser.fullName,
+        angkatan: req.body.angkatan || currentUser.angkatan,
+        nim: req.body.nim || currentUser.nim,
+        profilePicture: imageUrl,
+        divisionId: req.body.divisi || currentUser.divisi
+      },{ where: { id: currentUser.id }});
+
+    // Ambil kembali data pengguna setelah diupdate
+    const updatedUser = await User.findOne({
+      where: {
+        id: currentUser.id,
+      },
+      include: {
+        model: Division,
+        attributes: ['name'],
+      },
+    });
+
     res.status(200).json({
-      status: "TESTING",
-      imageUrl: imageUrl
-    })
+      status: "Success",
+      message: "Successfully edit user data",
+      user: {
+        id: updatedUser.id,
+        fullName: updatedUser.fullName,
+        nim: updatedUser.nim,
+        angkatan: updatedUser.angkatan,
+        profilePicture: updatedUser.profilePicture,
+        division: {
+          name: updatedUser.division ? updatedUser.division.name : null,
+        },
+      },
+    });
   } catch (error) {
     res.status(error.statusCode || 500).json({
       status: "Error",
-      message: error.message
-    })
+      message: error.message,
+    });
   }
-}
+};
 
 module.exports = {
   getAllUser, getUserById, postUser, deleteUser, loginHandler, getUserByToken,
